@@ -359,7 +359,8 @@
       if (isProcessingThumb || thumbQueue.length === 0) return;
       isProcessingThumb = true;
       var task = thumbQueue.shift();
-      generateThumbnail(task.fileObj, thumbnailSize, thumbnailSize, function(data) {
+      // generateThumbnail(task.fileObj, thumbnailSize, thumbnailSize, function(data) {
+      generateThumbnail(task.fileObj, 256, 256, function(data) {
         thumbCache[task.key] = data;
         var tx = db.transaction('thumbnails', 'readwrite');
         tx.objectStore('thumbnails').put(data, task.key);
@@ -491,26 +492,50 @@
     function showMedia() {
       mediaContainer.style.display = 'block';
       gridContainer.classList.remove('visible');
-      mediaContainer.innerHTML = '';
+
       var fo = files[currentIndex]; if (!fo) return;
+
       filenameElement.textContent = fo.name;
-      var el;
-      if (fo.type.indexOf('image/') === 0) {
-        el = document.createElement('img'); imageZoom=1; el.style.width='100%'; el.style.height='auto';
-      } else if (fo.type.indexOf('video/') === 0) {
-        el = document.createElement('video'); el.controls=true; el.autoplay=true; applyMode(el);
-      } else if (fo.type.indexOf('audio/') === 0) {
-        el = document.createElement('audio'); el.controls=true; el.autoplay=true; applyMode(el);
-      } else {
-        el = document.createElement('div'); el.className='unsupported'; el.innerHTML='<div>Unsupported: '+fo.type+'</div><div>'+fo.name+'</div>';
+
+      var existingMedia = mediaContainer.firstElementChild;
+
+      if (existingMedia && existingMedia.dataset.src === fo.url) {
+        return;
       }
-      el.src=fo.url; mediaContainer.appendChild(el);
+
+      if (existingMedia) {
+        existingMedia.src = fo.url;
+        existingMedia.dataset.src = fo.url;
+
+        if (fo.type.indexOf('video/') === 0 || fo.type.indexOf('audio/') === 0) {
+          existingMedia.currentTime = 0;
+          existingMedia.play();
+          applyMode(existingMedia);
+        }
+
+        return;
+      }
+
+      var el;
+
+      if (fo.type.indexOf('image/') === 0) {
+        el = document.createElement('img'); imageZoom = 1; el.style.width = '100%'; el.style.height = 'auto';
+      } else if (fo.type.indexOf('video/') === 0) {
+        el = document.createElement('video'); el.controls = true; el.autoplay = true; applyMode(el);
+      } else if (fo.type.indexOf('audio/') === 0) {
+        el = document.createElement('audio'); el.controls = true; el.autoplay = true; applyMode(el);
+      } else {
+        el = document.createElement('div'); el.className = 'unsupported'; el.innerHTML = '<div>Unsupported: ' + fo.type + '</div><div>' + fo.name + '</div>';
+      }
+
+      el.src = fo.url; el.dataset.src = fo.url;
+      mediaContainer.appendChild(el);
     }
 
     function showGrid() {
-      mediaContainer.style.display='none'; gridContainer.classList.add('visible');
+      mediaContainer.style.display = 'none'; gridContainer.classList.add('visible');
       Array.from(gridContainer.children).forEach(function(w,i) {
-        w.classList.toggle('selected', i===currentIndex);
+        w.classList.toggle('selected', i === currentIndex);
       });
       filenameElement.textContent = '';
     }
@@ -545,7 +570,13 @@
     copyButton.onclick = copyCurrentName;
     deleteButton.onclick = copyDeleteCommand;
     clearCacheButton.onclick = clearCache;
-    modeSelect.onchange = render;
+    modeSelect.onchange = function() {
+      render();
+      var currentMedia = mediaContainer.firstElementChild;
+      if (currentMedia && (currentMedia.tagName === 'VIDEO' || currentMedia.tagName === 'AUDIO')) {
+        applyMode(currentMedia);
+      }
+    };
     thumbSizeSelect.onchange = onThumbSizeChange;
     document.addEventListener('wheel', onWheel);
     document.addEventListener('keydown', onKeyDown);
