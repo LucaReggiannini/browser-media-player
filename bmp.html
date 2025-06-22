@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Browser Media Player</title>
+  <style>
+    /* Use rems for responsiveness; base font-size is 16px = 1rem */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: black;
+      color: white;
+      font-family: sans-serif;
+      font-size: 1rem; /* 16px base */
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 1.75rem; /* was 28px */
+      padding: 0 0.625rem; /* was 10px */
+      background: #111;
+      font-size: 0.75rem; /* was 12px */
+    }
+
+    #toolbar-left {
+      flex: 1;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    #toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 0.3125rem; /* was 5px */
+    }
+
+    #mode-select,
+    #thumb-size-select {
+      min-width: 5rem; /* ~80px */
+    }
+
+    button,
+    label[role="button"],
+    select,
+    label.checkbox-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 1.5rem; /* was 24px */
+      background: #333;
+      color: white;
+      border: 0.0625rem solid #555; /* was 1px */
+      border-radius: 0.125rem; /* was 2px */
+      font-size: 0.75rem; /* was 12px */
+      cursor: pointer;
+      padding: 0 0.25rem; /* was 4px */
+      margin: 0;
+    }
+
+    label.checkbox-wrapper {
+      gap: 0.25rem; /* was 4px */
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    #media-container,
+    #grid-container {
+      position: absolute;
+      top: 1.75rem; /* toolbar height */
+      left: 0;
+      right: 0;
+      bottom: 0;
+      padding: 0.3125rem; /* was 5px */
+      overflow: auto;
+    }
+
+    #grid-container {
+      display: none;
+      grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr)); /* was 128px */
+      grid-auto-rows: 8rem; /* was 128px */
+      gap: 0.3125rem; /* was 5px */
+    }
+
+    #grid-container.visible {
+      display: grid;
+    }
+
+    #media-container > img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    #media-container > video,
+    #media-container > audio {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    #media-container .unsupported {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #f88;
+      font-size: 1rem; /* was 16px */
+      text-align: center;
+      padding: 0.625rem; /* was 10px */
+      white-space: normal;
+      word-break: break-word;
+    }
+
+    #toast {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(50,50,50,0.8);
+      color: white;
+      padding: 0.625rem 1.25rem; /* was 10px 20px */
+      border-radius: 0.25rem; /* was 4px */
+      font-size: 0.875rem; /* was 14px */
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      max-width: 80%;
+      text-align: center;
+      z-index: 100;
+    }
+
+    #grid-container .thumb-wrapper {
+      position: relative;
+      background: #222;
+      border: 0.125rem solid #444; /* was 2px */
+      border-radius: 0.25rem; /* was 4px */
+      overflow: hidden;
+    }
+
+    #grid-container .thumb-wrapper.selected {
+      border-color: #0af;
+    }
+
+    #grid-container .thumb-wrapper img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .thumb-caption {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      background: rgba(0,0,0,0.5);
+      color: white;
+      font-size: 0.625rem; /* was 10px */
+      padding: 0.125rem 0.25rem; /* was 2px 4px */
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: calc(100% - 3rem); /* adapt to two 1.5rem buttons */
+    }
+
+    .thumb-delete {
+      position: absolute;
+      bottom: 0.125rem;
+      right: 0.125rem;
+      width: 1.25rem; /* was 20px */
+      height: 1.25rem; /* was 20px */
+      background: rgba(0,0,0,0.5);
+      border: none;
+      color: white;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.125rem;
+      cursor: pointer;
+    }
+
+    .thumb-copy {
+      position: absolute;
+      bottom: 0.125rem;
+      right: 1.5rem; /* one width + gap */
+      width: 1.25rem;
+      height: 1.25rem;
+      background: rgba(0,0,0,0.5);
+      border: none;
+      color: white;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 0.125rem;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <div id="toolbar-left"><span id="filename"></span></div>
+    <div id="toolbar-right">
+      <label for="folder-input" role="button" title="Select Folder">📂</label>
+      <input type="file" id="folder-input" webkitdirectory multiple>
+      <button id="grid-toggle" title="Toggle Grid View">▦</button>
+      <button id="copy-name" title="Copy File Name">📋</button>
+      <button id="delete-name" title="Delete Command">❌</button>
+      <button id="prev" title="Previous">←</button>
+      <button id="next" title="Next">→</button>
+      <select id="mode-select" title="Playback Mode">
+        <option value="none">None</option>
+        <option value="autonext">Auto</option>
+        <option value="loop" selected>Loop</option>
+      </select>
+      <select id="thumb-size-select" title="Thumbnail Size">
+        <option value="64">Small</option>
+        <option value="128" selected>Medium</option>
+        <option value="256">Large</option>
+      </select>
+      <label class="checkbox-wrapper"><input type="checkbox" id="cycle"> Cycle</label>
+      <button id="clear-cache" title="Clear Cache">🗑️</button>
+    </div>
+  </div>
+  <div id="media-container"></div>
+  <div id="grid-container"></div>
+  <div id="toast"></div>
+
+  <script>
+    var mediaContainer = document.getElementById('media-container');
+    var gridContainer = document.getElementById('grid-container');
+    var filenameElement = document.getElementById('filename');
+    var folderInput = document.getElementById('folder-input');
+    var gridToggleButton = document.getElementById('grid-toggle');
+    var prevButton = document.getElementById('prev');
+    var nextButton = document.getElementById('next');
+    var copyButton = document.getElementById('copy-name');
+    var deleteButton = document.getElementById('delete-name');
+    var modeSelect = document.getElementById('mode-select');
+    var cycleCheckbox = document.getElementById('cycle');
+    var thumbSizeSelect = document.getElementById('thumb-size-select');
+    var clearCacheButton = document.getElementById('clear-cache');
+    var toastElement = document.getElementById('toast');
+
+    var files = [];
+    var currentIndex = 0;
+    var isGridView = false;
+    var thumbnailSize = parseInt(thumbSizeSelect.value, 10);
+    var imageZoom = 1;
+    var thumbCache = {};
+    var thumbQueue = [];
+    var isProcessingThumb = false;
+    var db;
+    var toastTimeout;
+
+    function initDB() {
+      var request = indexedDB.open('MediaViewerDB', 1);
+      request.onupgradeneeded = handleDBUpgrade;
+      request.onsuccess = handleDBOpen;
+      request.onerror = handleDBError;
+    }
+
+    function handleDBUpgrade(event) {
+      db = event.target.result;
+      if (!db.objectStoreNames.contains('thumbnails')) {
+        db.createObjectStore('thumbnails');
+      }
+    }
+
+    function handleDBOpen(event) {
+      db = event.target.result;
+      populateCacheFromDB();
+    }
+
+    function handleDBError(event) {
+      console.error('IndexedDB error:', event);
+    }
+
+    function populateCacheFromDB() {
+      var tx = db.transaction('thumbnails', 'readonly');
+      var store = tx.objectStore('thumbnails');
+      var cursorRequest = store.openCursor();
+      cursorRequest.onsuccess = function(event) {
+        var cursor = event.target.result;
+        if (cursor) {
+          thumbCache[cursor.key] = cursor.value;
+          cursor.continue();
+        }
+      };
+    }
+
+    function generateThumbnail(fileObj, width, height, cb) {
+      if (fileObj.type.indexOf('image/') === 0) {
+        cb(fileObj.url);
+        return;
+      }
+      var videoEl = document.createElement('video');
+      videoEl.muted = true;
+      videoEl.style.display = 'none';
+      document.body.appendChild(videoEl);
+      var blobUrl = URL.createObjectURL(fileObj.file);
+      videoEl.src = blobUrl;
+      videoEl.onloadedmetadata = function() {
+        videoEl.currentTime = 0;
+      };
+      videoEl.onseeked = function() {
+        var canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        var ctx = canvas.getContext('2d');
+        var ratio = Math.min(width / videoEl.videoWidth, height / videoEl.videoHeight);
+        ctx.drawImage(
+          videoEl,
+          (width - videoEl.videoWidth * ratio) / 2,
+          (height - videoEl.videoHeight * ratio) / 2,
+          videoEl.videoWidth * ratio,
+          videoEl.videoHeight * ratio
+        );
+        URL.revokeObjectURL(blobUrl);
+        document.body.removeChild(videoEl);
+        cb(canvas.toDataURL('image/jpeg', 1.0));
+      };
+    }
+
+    function enqueueThumb(fileObj, imgEl) {
+      var key = fileObj.name + '_' + fileObj.file.lastModified;
+      imgEl.dataset.key = key;
+      if (thumbCache[key]) {
+        imgEl.src = thumbCache[key];
+      } else {
+        var tx = db.transaction('thumbnails', 'readonly');
+        var store = tx.objectStore('thumbnails');
+        var req = store.get(key);
+        req.onsuccess = function() {
+          if (req.result) {
+            thumbCache[key] = req.result;
+            imgEl.src = req.result;
+          } else {
+            thumbQueue.push({ fileObj: fileObj, key: key, imgEl: imgEl });
+            processThumbQueue();
+          }
+        };
+      }
+    }
+
+    function processThumbQueue() {
+      if (isProcessingThumb || thumbQueue.length === 0) return;
+      isProcessingThumb = true;
+      var task = thumbQueue.shift();
+      generateThumbnail(task.fileObj, thumbnailSize, thumbnailSize, function(data) {
+        thumbCache[task.key] = data;
+        var tx = db.transaction('thumbnails', 'readwrite');
+        tx.objectStore('thumbnails').put(data, task.key);
+        task.imgEl.src = data;
+        isProcessingThumb = false;
+        processThumbQueue();
+      });
+    }
+
+    function showToast(message) {
+      clearTimeout(toastTimeout);
+      toastElement.textContent = message;
+      toastElement.style.opacity = '1';
+      toastTimeout = setTimeout(function() {
+        toastElement.style.opacity = '0';
+      }, 1500);
+    }
+
+    function copyCurrentName() {
+      var name = files[currentIndex].name;
+      var displayName = name.length > 30 ? name.substring(0, 27) + '...' : name;
+      showToast('Filename copied: ' + displayName);
+      navigator.clipboard.writeText(name).catch(console.error);
+    }
+
+    function copyDeleteCommand() {
+      var name = files[currentIndex].name;
+      var cmd = 'bmp_cmd_delete:' + name;
+      showToast('Delete command: ' + name);
+      navigator.clipboard.writeText(cmd).catch(console.error);
+    }
+
+    function onKeyDown(evt) {
+      if (evt.key === 'Delete') {
+        evt.preventDefault();
+        copyDeleteCommand();
+      }
+      if (evt.ctrlKey && evt.key.toLowerCase() === 'c') {
+        evt.preventDefault();
+        copyCurrentName();
+      }
+      if (evt.key === 'ArrowLeft') { showPrev(); evt.preventDefault(); }
+      if (evt.key === 'ArrowRight') { showNext(); evt.preventDefault(); }
+    }
+
+    function updateGrid() {
+      gridContainer.style.gridTemplateColumns =
+        'repeat(auto-fill, minmax(' + thumbnailSize + 'px, 1fr))';
+      gridContainer.style.gridAutoRows = thumbnailSize + 'px';
+      var wrappers = gridContainer.getElementsByClassName('thumb-wrapper');
+      for (var i = 0; i < wrappers.length; i++) {
+        wrappers[i].style.width = thumbnailSize + 'px';
+        wrappers[i].style.height = thumbnailSize + 'px';
+      }
+    }
+
+    function onFolderChange(evt) {
+      files.forEach(function(f) { URL.revokeObjectURL(f.url); });
+      files = [];
+      var fileList = Array.prototype.slice.call(evt.target.files);
+      fileList.forEach(function(f) {
+        files.push({ file: f, name: f.name, url: URL.createObjectURL(f), type: f.type });
+      });
+      files.sort(function(a, b) { return a.name.localeCompare(b.name); });
+      currentIndex = 0; isGridView = false;
+      gridContainer.innerHTML = '';
+      thumbQueue = [];
+      isProcessingThumb = false;
+      files.forEach(function(fo, i) {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'thumb-wrapper';
+        wrapper.dataset.index = i;
+        wrapper.onclick = onThumbClick;
+        var img = document.createElement('img'); wrapper.appendChild(img);
+        var cap = document.createElement('div'); cap.className = 'thumb-caption'; cap.textContent = fo.name; wrapper.appendChild(cap);
+        var cb = document.createElement('button'); cb.className = 'thumb-copy'; cb.title = 'Copy Name'; cb.textContent = '📋'; cb.onclick = onThumbCopyClick; wrapper.appendChild(cb);
+        var dbtn = document.createElement('button'); dbtn.className = 'thumb-delete'; dbtn.title = 'Delete'; dbtn.textContent = '❌'; dbtn.onclick = function(evt) { evt.stopPropagation(); copyDeleteCommand(); }; wrapper.appendChild(dbtn);
+        gridContainer.appendChild(wrapper);
+        enqueueThumb(fo, img);
+      });
+      render(); updateGrid();
+    }
+
+    function onThumbClick() {
+      currentIndex = parseInt(this.dataset.index, 10);
+      isGridView = false;
+      render();
+    }
+
+    function onThumbCopyClick(evt) {
+      evt.stopPropagation();
+      var idx = parseInt(this.parentNode.dataset.index, 10);
+      var name = files[idx].name;
+      showToast('Filename copied: ' + name);
+      navigator.clipboard.writeText(name).catch(console.error);
+    }
+
+    function toggleView() {
+      isGridView = !isGridView;
+      render();
+    }
+
+    function showPrev() {
+      if (currentIndex > 0) { currentIndex--; }
+      else if (cycleCheckbox.checked) { currentIndex = files.length - 1; }
+      render();
+    }
+
+    function showNext() {
+      if (currentIndex < files.length - 1) { currentIndex++; }
+      else if (cycleCheckbox.checked) { currentIndex = 0; }
+      render();
+    }
+
+    function clearCache() {
+      if (confirm('Clear thumbnail cache?')) {
+        thumbCache = {};
+        var tx = db.transaction('thumbnails', 'readwrite');
+        tx.objectStore('thumbnails').clear().onsuccess = function() { location.reload(); };
+      }
+    }
+
+    function applyMode(el) {
+      var mode = modeSelect.value;
+      el.loop = (mode === 'loop');
+      el.onended = (mode === 'autonext') ? showNext : null;
+    }
+
+    function showMedia() {
+      mediaContainer.style.display = 'block';
+      gridContainer.classList.remove('visible');
+      mediaContainer.innerHTML = '';
+      var fo = files[currentIndex]; if (!fo) return;
+      filenameElement.textContent = fo.name;
+      var el;
+      if (fo.type.indexOf('image/') === 0) {
+        el = document.createElement('img'); imageZoom=1; el.style.width='100%'; el.style.height='auto';
+      } else if (fo.type.indexOf('video/') === 0) {
+        el = document.createElement('video'); el.controls=true; el.autoplay=true; applyMode(el);
+      } else if (fo.type.indexOf('audio/') === 0) {
+        el = document.createElement('audio'); el.controls=true; el.autoplay=true; applyMode(el);
+      } else {
+        el = document.createElement('div'); el.className='unsupported'; el.innerHTML='<div>Unsupported: '+fo.type+'</div><div>'+fo.name+'</div>';
+      }
+      el.src=fo.url; mediaContainer.appendChild(el);
+    }
+
+    function showGrid() {
+      mediaContainer.style.display='none'; gridContainer.classList.add('visible');
+      Array.from(gridContainer.children).forEach(function(w,i) {
+        w.classList.toggle('selected', i===currentIndex);
+      });
+      filenameElement.textContent = '';
+    }
+
+    function render() { isGridView ? showGrid() : showMedia(); }
+
+    function onWheel(evt) {
+      if (!isGridView) {
+        var imgE = mediaContainer.querySelector('img');
+        if (imgE) {
+          evt.preventDefault(); imageZoom += -evt.deltaY*0.001;
+          imageZoom = Math.min(Math.max(imageZoom,0.2),5);
+          imgE.style.width = (imageZoom*100)+'%';
+        }
+      }
+    }
+
+    function onThumbSizeChange() {
+      thumbnailSize = parseInt(thumbSizeSelect.value,10);
+      updateGrid(); thumbQueue=[]; isProcessingThumb=false;
+      var imgs = gridContainer.getElementsByTagName('img');
+      for (var i=0;i<imgs.length;i++) {
+        var key=imgs[i].dataset.key;
+        files.forEach(function(f){ if (f.name+'_'+f.file.lastModified === key) enqueueThumb(f, imgs[i]); });
+      }
+    }
+
+    folderInput.onchange = onFolderChange;
+    gridToggleButton.onclick = toggleView;
+    prevButton.onclick = showPrev;
+    nextButton.onclick = showNext;
+    copyButton.onclick = copyCurrentName;
+    deleteButton.onclick = copyDeleteCommand;
+    clearCacheButton.onclick = clearCache;
+    modeSelect.onchange = render;
+    thumbSizeSelect.onchange = onThumbSizeChange;
+    document.addEventListener('wheel', onWheel);
+    document.addEventListener('keydown', onKeyDown);
+
+    initDB();
+  </script>
+</body>
+</html>
