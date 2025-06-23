@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- Source: https://github.com/LucaReggiannini/browser-media-player -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -220,6 +221,12 @@
       <button id="delete-name" title="Delete Command">❌</button>
       <button id="prev" title="Previous">←</button>
       <button id="next" title="Next">→</button>
+      <select id="sort-select" title="Sort Order">
+        <option value="name-asc">A-Z</option>
+        <option value="name-desc">Z-A</option>
+        <option value="date-desc" selected>Newest</option>
+        <option value="date-asc">Oldest</option>
+      </select>
       <select id="mode-select" title="Playback Mode">
         <option value="none">None</option>
         <option value="autonext">Auto</option>
@@ -239,6 +246,7 @@
   <div id="toast"></div>
 
   <script>
+    var sortSelect = document.getElementById('sort-select');
     var mediaContainer = document.getElementById('media-container');
     var gridContainer = document.getElementById('grid-container');
     var filenameElement = document.getElementById('filename');
@@ -417,6 +425,25 @@
       }
     }
 
+    function buildGridFromFiles() {
+      gridContainer.innerHTML = '';
+        thumbQueue = [];
+        isProcessingThumb = false;
+        files.forEach(function(fo, i) {
+          var wrapper = document.createElement('div');
+          wrapper.className = 'thumb-wrapper';
+          wrapper.dataset.index = i;
+          wrapper.onclick = onThumbClick;
+          var img = document.createElement('img'); wrapper.appendChild(img);
+          var cap = document.createElement('div'); cap.className = 'thumb-caption'; cap.textContent = fo.name; wrapper.appendChild(cap);
+          var cb = document.createElement('button'); cb.className = 'thumb-copy'; cb.title = 'Copy Name'; cb.textContent = '📋'; cb.onclick = onThumbCopyClick; wrapper.appendChild(cb);
+          var dbtn = document.createElement('button'); dbtn.className = 'thumb-delete'; dbtn.title = 'Delete'; dbtn.textContent = '❌'; dbtn.onclick = function(evt) { evt.stopPropagation(); copyDeleteCommand(); }; wrapper.appendChild(dbtn);
+          gridContainer.appendChild(wrapper);
+          enqueueThumb(fo, img);
+        });
+        render(); updateGrid();
+    }
+
     function onFolderChange(evt) {
       files.forEach(function(f) { URL.revokeObjectURL(f.url); });
       files = [];
@@ -424,24 +451,9 @@
       fileList.forEach(function(f) {
         files.push({ file: f, name: f.name, url: URL.createObjectURL(f), type: f.type });
       });
-      files.sort(function(a, b) { return a.name.localeCompare(b.name); });
+      sortFiles();
       currentIndex = 0; isGridView = false;
-      gridContainer.innerHTML = '';
-      thumbQueue = [];
-      isProcessingThumb = false;
-      files.forEach(function(fo, i) {
-        var wrapper = document.createElement('div');
-        wrapper.className = 'thumb-wrapper';
-        wrapper.dataset.index = i;
-        wrapper.onclick = onThumbClick;
-        var img = document.createElement('img'); wrapper.appendChild(img);
-        var cap = document.createElement('div'); cap.className = 'thumb-caption'; cap.textContent = fo.name; wrapper.appendChild(cap);
-        var cb = document.createElement('button'); cb.className = 'thumb-copy'; cb.title = 'Copy Name'; cb.textContent = '📋'; cb.onclick = onThumbCopyClick; wrapper.appendChild(cb);
-        var dbtn = document.createElement('button'); dbtn.className = 'thumb-delete'; dbtn.title = 'Delete'; dbtn.textContent = '❌'; dbtn.onclick = function(evt) { evt.stopPropagation(); copyDeleteCommand(); }; wrapper.appendChild(dbtn);
-        gridContainer.appendChild(wrapper);
-        enqueueThumb(fo, img);
-      });
-      render(); updateGrid();
+      buildGridFromFiles();
     }
 
     function onThumbClick() {
@@ -578,10 +590,71 @@
       }
     };
     thumbSizeSelect.onchange = onThumbSizeChange;
+    sortSelect.onchange = function() {
+      sortFiles();
+      currentIndex = 0;
+      buildGridFromFiles();
+      render();
+      updateGrid();
+    };
     document.addEventListener('wheel', onWheel);
     document.addEventListener('keydown', onKeyDown);
 
     initDB();
+
+setInterval(function checkCurrentFileExists() {
+  if (!files.length || isGridView) return;
+
+  var fo = files[currentIndex];
+  if (!fo) return;
+
+  checkIfMediaStillLoads(fo, function(success) {
+    if (!success) {
+      // File non più accessibile → rimuovi
+      URL.revokeObjectURL(fo.url);
+      files.splice(currentIndex, 1);
+
+      if (files.length === 0) {
+        mediaContainer.innerHTML = '';
+        filenameElement.textContent = '[No files]';
+        return;
+      }
+
+      if (currentIndex >= files.length) currentIndex = files.length - 1;
+      render();
+    }
+  });
+}, 1000);
+
+function checkIfMediaStillLoads(fo, callback) {
+  let el;
+
+  if (fo.type.startsWith('image/')) {
+    el = new Image();
+  } else if (fo.type.startsWith('video/') || fo.type.startsWith('audio/')) {
+    el = document.createElement(fo.type.startsWith('video/') ? 'video' : 'audio');
+    el.preload = 'auto';
+  } else {
+    callback(false);
+    return;
+  }
+
+  el.onerror = () => callback(false);
+  el.onload = () => callback(true);
+  el.onloadeddata = () => callback(true);
+  el.src = fo.url;
+}
+
+function sortFiles() {
+  var mode = sortSelect.value;
+  files.sort(function(a, b) {
+    if (mode === 'name-asc') return a.name.localeCompare(b.name);
+    if (mode === 'name-desc') return b.name.localeCompare(a.name);
+    if (mode === 'date-asc') return a.file.lastModified - b.file.lastModified;
+    if (mode === 'date-desc') return b.file.lastModified - a.file.lastModified;
+    return 0;
+  });
+}
   </script>
 </body>
 </html>
