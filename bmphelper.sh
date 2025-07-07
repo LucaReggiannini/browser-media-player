@@ -10,17 +10,17 @@ Usage:
   ./bmphelper.sh /path/to/media/folder
 
 Description:
-  This script monitors the system clipboard (via wl-clipboard) and listens for
-  delete commands issued by BMP (Browser Media Player). When it detects a clipboard
-  string in the format:
+  Monitors the system clipboard (Wayland) and waits for delete commands in the
+  form:
 
     bmp_cmd_delete:filename.ext
 
-  it searches for the specified file inside the target directory and moves it to
-  the trash using 'gio trash'.
+  Searches *recursively* inside the target directory for the requested file and
+  moves it to the trash with 'gio trash'.
 
 Current Features:
-  - Delete command: detects and deletes files requested by BMP.
+  - Recursive delete command: detects and deletes files requested by BMP even if
+    they are in sub-directories.
   - Ignores clipboard content longer than 256 characters or empty clips.
   - Clears the clipboard after a successful deletion to avoid repeated processing.
   - Prints a single message on first valid delete to confirm activation.
@@ -72,12 +72,15 @@ while true; do
     if [[ "$CLIP" == bmp_cmd_delete:* ]]; then
       FILE_NAME="${CLIP#bmp_cmd_delete:}"
       FILE_NAME="${FILE_NAME//$'\n'/}"
-      FILE_PATH="$TARGET_DIR/$FILE_NAME"
 
-      if [[ -e "$FILE_PATH" ]]; then
+      # Find the file recursively; take the first match
+      FILE_PATH=$(find "$TARGET_DIR" -type f -name "$FILE_NAME" -print -quit)
+
+      if [[ -n "$FILE_PATH" && -e "$FILE_PATH" ]]; then
         echo "[-] $FILE_PATH"
         gio trash -- "$FILE_PATH"
-        wl-copy "" >/dev/null 2>&1
+        # Clear clipboard correctly and release ownership
+        wl-copy -f --clear 2>/dev/null
 
         if [[ "$FIRST_DELETE_DONE" -eq 0 ]]; then
           echo "[!] Sleep time set to 1"
@@ -96,3 +99,4 @@ while true; do
 
   sleep "$SLEEP_INTERVAL"
 done
+
