@@ -96,12 +96,13 @@
       display: grid;
     }
 
-    #media-container > img {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
+	#media-container > img {
+	  max-width: 100%;
+	  max-height: 100%;
+	  object-fit: contain;
+	  display: block;
+	  margin: auto;
+	}
     #media-container > video,
     #media-container > audio {
       width: 100%;
@@ -310,10 +311,16 @@
     }
 
     function generateThumbnail(fileObj, width, height, cb) {
-      if (fileObj.type.indexOf('image/') === 0) {
-        cb(fileObj.url);
-        return;
-      }
+		if (fileObj.type.indexOf('image/') === 0) {
+		  const img = new Image();
+		  const reader = new FileReader();
+		  reader.onload = function() {
+			const dataUrl = reader.result;
+			cb(dataUrl);
+		  };
+		  reader.readAsDataURL(fileObj.file);
+		  return;
+		}
       var videoEl = document.createElement('video');
       videoEl.muted = true;
       videoEl.style.display = 'none';
@@ -502,47 +509,46 @@
     }
 
     function showMedia() {
-      mediaContainer.style.display = 'block';
-      gridContainer.classList.remove('visible');
+	  mediaContainer.style.display = 'block';
+	  gridContainer.classList.remove('visible');
 
-      var fo = files[currentIndex]; if (!fo) return;
+	  var fo = files[currentIndex];
+	  if (!fo) return;
 
-      filenameElement.textContent = fo.name;
+	  filenameElement.textContent = fo.name;
 
-      var existingMedia = mediaContainer.firstElementChild;
+	  // Reset zoom
+	  imageZoom = 1;
 
-      if (existingMedia && existingMedia.dataset.src === fo.url) {
-        return;
-      }
+	  // Remove previous elements
+	  while (mediaContainer.firstChild) {
+		mediaContainer.removeChild(mediaContainer.firstChild);
+	  }
 
-      if (existingMedia) {
-        existingMedia.src = fo.url;
-        existingMedia.dataset.src = fo.url;
+	  var el;
 
-        if (fo.type.indexOf('video/') === 0 || fo.type.indexOf('audio/') === 0) {
-          existingMedia.currentTime = 0;
-          existingMedia.play();
-          applyMode(existingMedia);
-        }
+	  if (fo.type.indexOf('image/') === 0) {
+		el = document.createElement('img');
+	  } else if (fo.type.indexOf('video/') === 0) {
+		el = document.createElement('video');
+		el.controls = true;
+		el.autoplay = true;
+		applyMode(el);
+	  } else if (fo.type.indexOf('audio/') === 0) {
+		el = document.createElement('audio');
+		el.controls = true;
+		el.autoplay = true;
+		applyMode(el);
+	  } else {
+		el = document.createElement('div');
+		el.className = 'unsupported';
+		el.innerHTML = '<div>Unsupported: ' + fo.type + '</div><div>' + fo.name + '</div>';
+	  }
 
-        return;
-      }
-
-      var el;
-
-      if (fo.type.indexOf('image/') === 0) {
-        el = document.createElement('img'); imageZoom = 1; el.style.width = '100%'; el.style.height = 'auto';
-      } else if (fo.type.indexOf('video/') === 0) {
-        el = document.createElement('video'); el.controls = true; el.autoplay = true; applyMode(el);
-      } else if (fo.type.indexOf('audio/') === 0) {
-        el = document.createElement('audio'); el.controls = true; el.autoplay = true; applyMode(el);
-      } else {
-        el = document.createElement('div'); el.className = 'unsupported'; el.innerHTML = '<div>Unsupported: ' + fo.type + '</div><div>' + fo.name + '</div>';
-      }
-
-      el.src = fo.url; el.dataset.src = fo.url;
-      mediaContainer.appendChild(el);
-    }
+	  el.src = fo.url;
+	  el.dataset.src = fo.url;
+	  mediaContainer.appendChild(el);
+	}
 
     function showGrid() {
       mediaContainer.style.display = 'none'; gridContainer.classList.add('visible');
@@ -610,7 +616,7 @@ setInterval(function checkCurrentFileExists() {
 
   checkIfMediaStillLoads(fo, function(success) {
     if (!success) {
-      // File non più accessibile → rimuovi
+      // File not accessible -> remove
       URL.revokeObjectURL(fo.url);
       files.splice(currentIndex, 1);
 
@@ -628,7 +634,6 @@ setInterval(function checkCurrentFileExists() {
 
 function checkIfMediaStillLoads(fo, callback) {
   let el;
-
   if (fo.type.startsWith('image/')) {
     el = new Image();
   } else if (fo.type.startsWith('video/') || fo.type.startsWith('audio/')) {
